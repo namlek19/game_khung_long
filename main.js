@@ -564,20 +564,15 @@ function setupWorld(models) {
   }
 }
 
-// Góc "nằm bay" của Usagi: ngả người về phía trước (đầu chĩa về -X, bụng úp xuống
-// kiểu Superman). Nhỏ hơn 90° một chút để mặt vẫn hơi ngóc lên nhìn phía trước.
-const USAGI_LIE_ANGLE = Math.PI / 2 - 0.22;
-
-/**
- * Nhận container Usagi đứng (đã chuẩn hoá, mặt hướng -X) và trả về template
- * Usagi nằm ngang: đáy chạm y = 0, tâm X/Z về 0, userData.height = độ dày khi nằm.
- */
+// Tư thế "bay nằm" của Usagi:
+// - Thân nằm ngang dọc theo trục X (đầu và tai hướng về -X, lao thẳng về Chiikawa)
+// - Mặt và mắt hơi ngửa lên và hướng về phía camera (+Z) để người chơi nhìn rõ biểu cảm hài hước
 function buildLyingUsagi(standing) {
   const h = standing.userData.height;
   const pivot = new THREE.Group();
   standing.position.y = -h / 2; // xoay quanh tâm thân
   pivot.add(standing);
-  pivot.rotation.z = USAGI_LIE_ANGLE; // +Z: đỉnh đầu (+Y) ngả về -X
+  pivot.rotation.set(-1.92, 0.09, 1.6); // nằm ngang, đầu hướng -X, mặt hướng chếch camera
 
   const container = new THREE.Group();
   container.add(pivot);
@@ -662,12 +657,12 @@ function nextSpawnGap(speed) {
 
 function updateObstacle(o, dt, t) {
   if (o.type !== 'usagi') return;
-  // Bay nhấp nhô hình sin + xoay hỗn loạn kiểu Usagi "Ura!"
+  // Bay nhấp nhô hình sin + rung lắc kiểu Usagi "Ura!"
   const p = o.phase;
   o.root.position.y = o.baseY + Math.sin(t * 6 + p) * 0.08;
-  o.wobble.rotation.z = Math.sin(t * 11 + p) * 0.25;
-  o.wobble.rotation.x = Math.cos(t * 7.3 + p) * 0.18;
-  o.wobble.rotation.y = Math.sin(t * 4.1 + p) * 0.35;
+  o.wobble.rotation.z = Math.sin(t * 11 + p) * 0.14;
+  o.wobble.rotation.x = Math.cos(t * 7.3 + p) * 0.12;
+  o.wobble.rotation.y = Math.sin(t * 4.1 + p) * 0.18;
 }
 
 // ---------------------------------------------------------------------

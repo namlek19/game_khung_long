@@ -212,15 +212,17 @@ body {
 }
 
 kbd {
-  display: inline-block;
-  font-family: var(--font);
-  font-size: 12px;
-  font-weight: 700;
-  line-height: 1.2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-vi);
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1;
   background: #fff;
-  color: #333;
-  border-radius: 4px;
-  padding: 3px 6px;
+  color: #1e3a2f;
+  border-radius: 5px;
+  padding: 4px 7px;
   box-shadow: 0 3px 0 #9fb3c8;
 }
 
@@ -242,7 +244,7 @@ kbd {
 }
 
 .btn {
-  font-family: var(--font);
+  font-family: var(--font-vi);
   font-size: 18px;
   font-weight: 700;
   color: #fff;
@@ -274,7 +276,7 @@ kbd {
   z-index: 30;
 }
 .tool-btn {
-  font-family: var(--font);
+  font-family: var(--font-vi);
   display: flex;
   align-items: center;
   gap: 8px;
@@ -284,7 +286,7 @@ kbd {
   background: rgba(15, 61, 39, 0.85);
   border: 3px solid #fff;
   border-radius: 8px;
-  padding: 10px 12px;
+  padding: 8px 12px;
   cursor: pointer;
   box-shadow: 0 4px 0 rgba(0, 0, 0, 0.25);
 }
