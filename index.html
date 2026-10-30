@@ -2,7 +2,7 @@
 <html lang="vi">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <title>Chiikawa Christmas 3D Runner</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -70,10 +70,24 @@
         <div><b>Mobile:</b> Chạm để nhảy · Vuốt xuống để cúi</div>
       </div>
 
-      <!-- Nút cảm ứng (chỉ hiện trên thiết bị cảm ứng) -->
-      <div id="touch-controls">
-        <button id="touch-duck" class="touch-btn">▼</button>
-        <button id="touch-jump" class="touch-btn">▲</button>
+      <!-- Nút cảm ứng (chỉ hiện trên thiết bị cảm ứng khi đang chơi) -->
+      <div id="touch-controls" class="hidden">
+        <button id="touch-duck" class="touch-btn" aria-label="Cúi">▼</button>
+        <button id="touch-jump" class="touch-btn" aria-label="Nhảy">▲</button>
+      </div>
+
+      <!-- Màn hình yêu cầu xoay ngang điện thoại (Portrait Lock Prompt) -->
+      <div id="rotate-prompt">
+        <div class="rotate-card snowcap">
+          <div class="rotate-anim">
+            <div class="phone-shape">
+              <div class="phone-screen"></div>
+            </div>
+            <div class="rotate-arrow">↻</div>
+          </div>
+          <h2 class="rotate-title">VUI LÒNG XOAY NGANG</h2>
+          <p class="sub">Hãy xoay ngang điện thoại để có góc nhìn đường chạy Bắc Cực rộng và đẹp nhất!</p>
+        </div>
       </div>
     </div>
     <script type="module" src="/main.js"></script>

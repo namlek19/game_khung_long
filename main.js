@@ -206,6 +206,7 @@ const ui = {
   helpPanel: $('help-panel'),
   btnSound: $('btn-sound'),
   soundLabel: $('sound-label'),
+  touchControls: $('touch-controls'),
   touchJump: $('touch-jump'),
   touchDuck: $('touch-duck'),
 };
@@ -257,22 +258,23 @@ sun.shadow.bias = -0.0005;
 sun.shadow.normalBias = 0.02;
 scene.add(sun, sun.target);
 
-// ---------- Mặt đất tuyết ----------
+// ---------- Mặt đất tuyết (mở rộng sâu ra chân trời để không bị hở mép) ----------
 const ground = new THREE.Mesh(
-  new THREE.PlaneGeometry(200, 100),
+  new THREE.PlaneGeometry(600, 400),
   new THREE.MeshStandardMaterial({ color: 0xf8fbff, roughness: 0.95 })
 );
 ground.rotation.x = -Math.PI / 2;
+ground.position.set(0, 0, -80);
 ground.receiveShadow = true;
 scene.add(ground);
 
 // Đường chạy (vệt tuyết bị nén, hơi xanh)
 const track = new THREE.Mesh(
-  new THREE.PlaneGeometry(200, 2.6),
+  new THREE.PlaneGeometry(600, 2.6),
   new THREE.MeshStandardMaterial({ color: 0xe6eef8, roughness: 1 })
 );
 track.rotation.x = -Math.PI / 2;
-track.position.y = 0.005;
+track.position.set(0, 0.005, 0);
 track.receiveShadow = true;
 scene.add(track);
 
@@ -370,45 +372,44 @@ const auroraFragmentShader = `
     if (uOpacity <= 0.001) {
       discard;
     }
-    // Góc phương vị 360 độ quanh tâm vòm trời
+    // Góc phương vị 360 độ (dùng số nguyên để tuần hoàn hoàn hảo không bị nứt/vết cắt)
     float angle = atan(vWorldPosition.z, vWorldPosition.x);
-    // Độ cao trên bầu trời
-    float h = clamp(vWorldPosition.y / 75.0, 0.0, 1.0);
+    float y = vWorldPosition.y;
+    float h = clamp((y - 2.0) / 85.0, 0.0, 1.0);
 
-    // Nhiều tầng sóng sin tạo dải lượn uốn khúc mềm mại
-    float wave1 = sin(angle * 3.5 + uTime * 0.45) * 0.5 + 0.5;
-    float wave2 = sin(angle * 7.5 - uTime * 0.75 + h * 3.2) * 0.25;
-    float wave3 = sin(angle * 13.0 + uTime * 1.1) * 0.12;
-    float ribbon = wave1 + wave2 + wave3;
+    // Fade mượt mà từ mặt đất (2.0) lên đến 28.0, tuyệt đối không bị đường cắt ngang thẳng ở chân trời
+    float heightMask = smoothstep(2.0, 28.0, y) * smoothstep(125.0, 65.0, y);
 
-    // Các dải sáng sọc dọc (vertical ray curtains)
-    float rays = sin(angle * 32.0 + sin(h * 8.5 + uTime * 0.35) * 2.8) * 0.5 + 0.5;
-    rays = pow(rays, 2.2);
+    // Dải lượn cực quang chính: liên tục và mềm mại quanh vòm trời (dùng hàm mũ Gaussian thay vì cắt ngưỡng cứng)
+    float curtain1 = sin(angle * 2.0 + uTime * 0.35 + sin(angle * 4.0 - uTime * 0.2) * 0.6);
+    float curtain2 = sin(angle * 4.0 - uTime * 0.5 + h * 3.0);
+    float curtainWave = curtain1 * 0.65 + curtain2 * 0.35;
+    float ribbon1 = exp(-pow(curtainWave * 1.5, 2.0));
 
-    // Mặt nạ độ cao: mờ dần ở chân trời (tránh đè lên đồi núi) và mờ ở đỉnh đầu
-    float heightMask = smoothstep(0.04, 0.22, h) * smoothstep(0.88, 0.38, h);
+    // Lớp cực quang thứ hai lượn sóng tạo chiều sâu nhiều lớp
+    float curtain3 = sin(angle * 3.0 + uTime * 0.25 - h * 2.5);
+    float ribbon2 = exp(-pow(curtain3 * 1.8, 2.0)) * 0.65;
 
-    // Cường độ dải cực quang
-    float intensity = smoothstep(0.35, 0.85, ribbon) * (0.55 + 0.45 * rays) * heightMask;
+    // Gợn sóng dọc lung linh nhẹ (vertical ray folds)
+    float rayWaves = 0.75 + 0.25 * sin(angle * 48.0 + sin(h * 6.0 + uTime * 0.4) * 2.0);
+    // Quầng sáng thiên hà tự nhiên ở nền trời
+    float ambientGlow = 0.22 * smoothstep(4.0, 35.0, y) * smoothstep(100.0, 50.0, y);
 
-    // Lớp cực quang thứ hai tạo chiều sâu không gian
-    float ribbon2 = sin(angle * 5.0 - uTime * 0.35 + h * 2.0) * 0.5 + 0.5;
-    float intensity2 = smoothstep(0.48, 0.88, ribbon2) * heightMask * 0.45;
-    intensity = max(intensity, intensity2);
+    float glow = (max(ribbon1, ribbon2) * rayWaves + ambientGlow) * heightMask;
 
-    // 3 tông màu rực rỡ đặc trưng
-    vec3 colPink = vec3(1.0, 0.50, 0.87);    // #ff80df Hồng phấn chân trời
-    vec3 colCyan = vec3(0.0, 1.0, 0.80);    // #00ffcc Xanh ngọc cực quang
-    vec3 colViolet = vec3(0.72, 0.30, 1.0); // #b84dff Tím hồng đỉnh trời
+    // 3 tông màu rực rỡ hòa sắc mượt mà không phân đoạn
+    vec3 colPink   = vec3(1.0, 0.46, 0.82); // #ff75d1 Hồng đào chân trời
+    vec3 colCyan   = vec3(0.0, 1.0, 0.82);  // #00ffd0 Xanh ngọc cực quang
+    vec3 colViolet = vec3(0.72, 0.32, 1.0); // #b852ff Tím mộng mơ đỉnh trời
 
-    vec3 col = mix(colPink, colCyan, smoothstep(0.12, 0.42, h));
-    col = mix(col, colViolet, smoothstep(0.42, 0.78, h));
+    vec3 col = mix(colPink, colCyan, smoothstep(0.08, 0.38, h));
+    col = mix(col, colViolet, smoothstep(0.40, 0.82, h));
 
-    gl_FragColor = vec4(col * (intensity * 2.3), intensity * uOpacity);
+    gl_FragColor = vec4(col * (glow * 2.4), glow * uOpacity);
   }
 `;
 
-const auroraGeo = new THREE.SphereGeometry(140, 64, 32, 0, Math.PI * 2, 0, Math.PI * 0.48);
+const auroraGeo = new THREE.SphereGeometry(180, 64, 40, 0, Math.PI * 2, 0, Math.PI * 0.54);
 const auroraMat = new THREE.ShaderMaterial({
   vertexShader: auroraVertexShader,
   fragmentShader: auroraFragmentShader,
@@ -422,6 +423,7 @@ const auroraMat = new THREE.ShaderMaterial({
   blending: THREE.AdditiveBlending,
 });
 const auroraDome = new THREE.Mesh(auroraGeo, auroraMat);
+auroraDome.position.set(0, -12, 0);
 auroraDome.frustumCulled = false;
 scene.add(auroraDome);
 
@@ -933,6 +935,7 @@ function resetGame() {
   player.body.rotation.set(0, 0, 0);
   player.root.position.y = 0;
   input.jumpQueued = 0;
+  if (ui.touchControls) ui.touchControls.classList.add('hidden');
   ui.score.textContent = pad(0);
 }
 
@@ -942,12 +945,14 @@ function startGame() {
   state = 'playing';
   ui.start.classList.add('hidden');
   ui.gameover.classList.add('hidden');
+  if (ui.touchControls) ui.touchControls.classList.remove('hidden');
 }
 
 function gameOver() {
   state = 'over';
   overTime = 0;
   shake = 0.35;
+  if (ui.touchControls) ui.touchControls.classList.add('hidden');
   sound.gameOver();
   const final = Math.floor(score);
   const isRecord = final > hiScore;
@@ -1254,11 +1259,19 @@ ui.btnAurora.addEventListener('click', toggleAurora);
 ui.btnSound.addEventListener('click', toggleSound);
 ui.btnHelp.addEventListener('click', () => ui.helpPanel.classList.toggle('hidden'));
 
-// ---------- Resize ----------
-window.addEventListener('resize', () => {
-  camera.aspect = window.innerWidth / window.innerHeight;
+// ---------- Resize & Orientation ----------
+function handleResize() {
+  const w = window.innerWidth;
+  const h = window.innerHeight;
+  camera.aspect = w / h;
   camera.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.setSize(w, h);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+}
+window.addEventListener('resize', handleResize);
+window.addEventListener('orientationchange', () => {
+  setTimeout(handleResize, 100);
+  setTimeout(handleResize, 300);
 });
 
 // =====================================================================
