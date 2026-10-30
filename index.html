@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>Chiikawa Christmas 3D Runner</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@500;600;700;800&family=Press+Start+2P&display=swap" rel="stylesheet" />
+  </head>
+  <body>
+    <div id="app">
+      <!-- Canvas WebGL được Three.js chèn vào đây -->
+
+      <!-- HUD điểm số -->
+      <div id="hud">
+        <div class="score-box snowcap">
+          <div class="score-row hi"><span class="label">HI</span><span id="hiscore">00000</span></div>
+          <div class="score-row"><span class="label">SCORE</span><span id="score">00000</span></div>
+        </div>
+      </div>
+
+      <!-- Màn hình loading -->
+      <div id="loading" class="overlay">
+        <div class="panel snowcap">
+          <h1 class="title">🎄 CHIIKAWA<br /><span>CHRISTMAS RUN</span></h1>
+          <p class="sub">Đang tải mô hình 3D...</p>
+          <div class="progress"><div id="progress-bar"></div></div>
+          <p id="loading-text" class="tiny">0%</p>
+        </div>
+      </div>
+
+      <!-- Màn hình chờ -->
+      <div id="start-screen" class="overlay hidden">
+        <div class="panel snowcap">
+          <h1 class="title">🎄 CHIIKAWA<br /><span>CHRISTMAS RUN</span></h1>
+          <p class="blink">PRESS SPACE TO START</p>
+          <div class="keys">
+            <div><kbd>SPACE</kbd> / <kbd>W</kbd> / <kbd>↑</kbd> Nhảy</div>
+            <div><kbd>↓</kbd> / <kbd>S</kbd> Cúi (giữ)</div>
+            <div><kbd>C</kbd> Đổi góc nhìn</div>
+          </div>
+          <button id="btn-start" class="btn">▶ Bắt đầu</button>
+        </div>
+      </div>
+
+      <!-- Màn hình Game Over -->
+      <div id="gameover-screen" class="overlay hidden">
+        <div class="panel snowcap">
+          <h1 class="title over">GAME OVER</h1>
+          <p class="sub">Điểm: <b id="final-score">0</b></p>
+          <p id="new-record" class="record hidden">★ KỶ LỤC MỚI! ★</p>
+          <button id="btn-restart" class="btn">↻ Chơi lại</button>
+          <p class="tiny">hoặc nhấn SPACE</p>
+        </div>
+      </div>
+
+      <!-- Thanh công cụ góc dưới -->
+      <div id="bottom-bar">
+        <button id="btn-camera" class="tool-btn" title="Đổi góc nhìn (C)"><kbd>C</kbd> Góc nhìn: <span id="camera-label">3/4</span></button>
+        <button id="btn-help" class="tool-btn" title="Hướng dẫn phím">Hướng dẫn</button>
+        <button id="btn-sound" class="tool-btn" title="Bật/tắt âm thanh (M)"><kbd>M</kbd> Âm thanh: <span id="sound-label">Bật</span></button>
+      </div>
+      <div id="help-panel" class="hidden">
+        <div><kbd>SPACE</kbd> / <kbd>W</kbd> / <kbd>↑</kbd> : Nhảy</div>
+        <div><kbd>↓</kbd> / <kbd>S</kbd> : Cúi / rơi nhanh</div>
+        <div><kbd>C</kbd> : Đổi góc nhìn &nbsp; <kbd>M</kbd> : Âm thanh</div>
+        <div><b>Mobile:</b> Chạm để nhảy · Vuốt xuống để cúi</div>
+      </div>
+
+      <!-- Nút cảm ứng (chỉ hiện trên thiết bị cảm ứng) -->
+      <div id="touch-controls">
+        <button id="touch-duck" class="touch-btn">▼</button>
+        <button id="touch-jump" class="touch-btn">▲</button>
+      </div>
+    </div>
+    <script type="module" src="/main.js"></script>
+  </body>
+</html>
+
