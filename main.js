@@ -289,14 +289,20 @@ track.position.set(0, 0.005, 0);
 track.receiveShadow = true;
 scene.add(track);
 
-// Đồi tuyết xa xa ở đường chân trời
+// Đồi tuyết xa xa ở đường chân trời (dãy núi Bắc Cực hùng vĩ)
+// Đặt lùi hẳn về phía sau Z = -72 đến -56, tách biệt hoàn toàn khỏi rặng thông (Z = -18 đến -8)
+// Đảm bảo không có bất kỳ cây nào bị cắm xuyên vào thân núi hay nổi lơ lửng trên dốc núi
 {
-  const hillMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1 });
-  for (let i = 0; i < 9; i++) {
-    const r = rand(10, 22);
+  const hillMat = new THREE.MeshStandardMaterial({ color: 0xf4f8fc, roughness: 1 });
+  const hillCount = 15;
+  for (let i = 0; i < hillCount; i++) {
+    const r = rand(22, 36);
     const hill = new THREE.Mesh(new THREE.SphereGeometry(r, 24, 12), hillMat);
-    hill.scale.y = rand(0.25, 0.45);
-    hill.position.set(-50 + i * 16 + rand(-4, 4), 0, rand(-55, -42));
+    hill.scale.y = rand(0.3, 0.46);
+    // Trải rộng khắp đường chân trời từ X = -110 đến +110
+    const x = -110 + (i / (hillCount - 1)) * 220 + rand(-5, 5);
+    const z = rand(-72, -56);
+    hill.position.set(x, 0, z);
     scene.add(hill);
   }
 }
@@ -763,6 +769,8 @@ function setupWorld(models) {
   // ---------- Rừng thông nền (Bắc Âu) ----------
   // Tối ưu hóa cực lớn cho CPU/GPU (nhất là Mobile):
   // Dùng 1 template cây nền dùng chung, chia sẻ chung vật liệu opaque, 0 đổ bóng, 0 depth-sorting
+  // Đặt trong dải Z = -18 đến -8: nằm phẳng trên mặt đất tuyết Y = 0, cách xa núi tuyết (Z <= -28)
+  // và tách biệt khỏi đường chạy (Z = 0), tạo hiệu ứng chiều sâu nhiều lớp hoàn hảo.
   const bgTreeTemplate = templates.treeBig.clone(true);
   bgTreeTemplate.traverse((c) => {
     if (c.isMesh) {
@@ -780,9 +788,11 @@ function setupWorld(models) {
   const span = CONFIG.worldMaxX - CONFIG.worldMinX;
   for (let i = 0; i < count; i++) {
     const tree = bgTreeTemplate.clone(true);
-    const s = rand(1.1, 2.3);
+    // Phân 2 lớp tự nhiên: lớp gần (Z: -11 đến -8, s: 1.0-1.4) và lớp sâu (Z: -18 đến -13, s: 1.5-2.2)
+    const isDeeper = i % 2 === 0;
+    const s = isDeeper ? rand(1.5, 2.2) : rand(1.0, 1.4);
     tree.scale.setScalar(s);
-    const z = rand(-34, -15);
+    const z = isDeeper ? rand(-18, -13) : rand(-11, -8);
     tree.position.set(CONFIG.worldMinX + (i / count) * span + rand(-2, 2), 0, z);
     tree.rotation.y = rand(0, Math.PI * 2);
     scene.add(tree);
@@ -1146,12 +1156,50 @@ function updatePlayerAnimation(dt, t) {
 //  Camera
 // ---------------------------------------------------------------------
 const camTargetPos = new THREE.Vector3();
+const camTargetLook = new THREE.Vector3();
+
+function getActivePreset() {
+  const base = CAMERA_PRESETS[cameraIndex];
+  const isCompact = window.innerHeight < 520;
+  const aspect = window.innerWidth / window.innerHeight;
+
+  if (!isCompact) {
+    return { pos: base.pos, look: base.look };
+  }
+
+  // Tinh chỉnh khung hình linh hoạt riêng cho Mobile landscape:
+  // Hạ góc máy và đưa camera lại gần một chút để Chiikawa nằm ở vị trí trung tâm tự nhiên,
+  // không bị dính sát mép dưới và dành 40% diện tích phía trên cho Bầu trời Cực quang & Sao đêm.
+  if (base.name === '3/4') {
+    return {
+      pos: new THREE.Vector3(2.2, 3.6, aspect > 2.0 ? 9.8 : 10.4),
+      look: new THREE.Vector3(2.8, 1.15, 0),
+    };
+  }
+  if (base.name === 'Ngang') {
+    return {
+      pos: new THREE.Vector3(1.2, 1.85, 11.4),
+      look: new THREE.Vector3(2.0, 1.15, 0),
+    };
+  }
+  if (base.name === 'Sau lưng') {
+    return {
+      pos: new THREE.Vector3(-9.5, 3.0, 3.0),
+      look: new THREE.Vector3(5.5, 1.1, 0),
+    };
+  }
+  return { pos: base.pos, look: base.look };
+}
+
 function updateCamera(dt) {
-  const preset = CAMERA_PRESETS[cameraIndex];
-  camTargetPos.copy(preset.pos);
+  const target = getActivePreset();
+  camTargetPos.copy(target.pos);
+  camTargetLook.copy(target.look);
+
   const k = 1 - Math.exp(-dt * 4);
   camera.position.lerp(camTargetPos, k);
-  cameraLook.lerp(preset.look, k);
+  cameraLook.lerp(camTargetLook, k);
+
   if (shake > 0) {
     shake = Math.max(0, shake - dt);
     const a = shake * 0.6;
@@ -1292,20 +1340,50 @@ ui.btnAurora.addEventListener('click', toggleAurora);
 ui.btnSound.addEventListener('click', toggleSound);
 ui.btnHelp.addEventListener('click', () => ui.helpPanel.classList.toggle('hidden'));
 
-// ---------- Resize & Orientation ----------
+// ---------- Resize & Orientation (Thích ứng linh hoạt mọi khung hình) ----------
+function updateCameraProjection() {
+  const w = window.innerWidth;
+  const h = window.innerHeight;
+  const aspect = w / h;
+  camera.aspect = aspect;
+
+  const refAspect = 16 / 9; // Tỉ lệ chuẩn 1.777
+  const baseFov = 45;
+
+  if (aspect < refAspect) {
+    // Với màn hình hẹp ngang (iPad 4:3, tablet 3:2, 16:10, màn hình gập):
+    // Tự động mở rộng vertical FOV để khóa cố định tầm nhìn ngang (horizontal FOV).
+    // Đảm bảo Chiikawa (X = -4) và chướng ngại vật phía trước (X = 25) luôn hiển thị trọn vẹn, không bị ép sát mép!
+    const vFovRad = 2 * Math.atan(Math.tan((baseFov * Math.PI) / 360) * (refAspect / aspect));
+    camera.fov = THREE.MathUtils.clamp((vFovRad * 180) / Math.PI, 45, 62);
+  } else if (aspect > 2.15) {
+    // Với các dòng điện thoại siêu dài (20:9, 21:9 hoặc thanh URL trình duyệt mobile làm giảm chiều cao):
+    // Giảm nhẹ FOV một chút để đường chạy và Chiikawa không bị quá nhỏ và dẹp
+    camera.fov = THREE.MathUtils.clamp(45 - (aspect - 2.15) * 4.5, 40, 45);
+  } else {
+    camera.fov = baseFov;
+  }
+
+  camera.updateProjectionMatrix();
+}
+
 function handleResize() {
   const w = window.innerWidth;
   const h = window.innerHeight;
-  camera.aspect = w / h;
-  camera.updateProjectionMatrix();
+  updateCameraProjection();
   renderer.setSize(w, h);
   renderer.setPixelRatio(maxDPR);
 }
 window.addEventListener('resize', handleResize);
+if (window.visualViewport) {
+  window.visualViewport.addEventListener('resize', handleResize);
+}
 window.addEventListener('orientationchange', () => {
   setTimeout(handleResize, 100);
   setTimeout(handleResize, 300);
+  setTimeout(handleResize, 600);
 });
+updateCameraProjection();
 
 // =====================================================================
 //  KHỞI ĐỘNG
