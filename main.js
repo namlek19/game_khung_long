@@ -34,6 +34,14 @@ const CONFIG = {
 const HISCORE_KEY = 'chiikawa-xmas-hiscore';
 const SOUND_KEY = 'chiikawa-xmas-sound';
 
+// Nhận diện thiết bị di động / màn hình cảm ứng để kích hoạt cấu hình tối ưu hiệu năng
+const isMobile =
+  typeof window !== 'undefined' &&
+  (/Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
+    'ontouchstart' in window ||
+    navigator.maxTouchPoints > 0 ||
+    window.innerWidth < 800);
+
 const rand = (a, b) => a + Math.random() * (b - a);
 const damp = (current, target, lambda, dt) => THREE.MathUtils.damp(current, target, lambda, dt);
 
@@ -90,6 +98,7 @@ function normalizeAndCenterModel(gltfScene, targetHeight, facingAngleY = 0) {
   const finalSize = new THREE.Box3().setFromObject(container).getSize(new THREE.Vector3());
   container.userData.size = finalSize;
   container.userData.height = targetHeight;
+  container.userData.localBox = new THREE.Box3().setFromObject(container);
   return container;
 }
 
@@ -232,11 +241,13 @@ const CAMERA_PRESETS = [
 ];
 let cameraIndex = 0;
 
-const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+const maxDPR = isMobile ? Math.min(window.devicePixelRatio, 1.35) : Math.min(window.devicePixelRatio, 1.75);
+
+const renderer = new THREE.WebGLRenderer({ antialias: !isMobile, powerPreference: 'high-performance' });
+renderer.setPixelRatio(maxDPR);
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.shadowMap.type = THREE.PCFShadowMap; // Tối ưu GPU: lọc phần cứng cực nhanh
 ui.app.prepend(renderer.domElement);
 
 // ---------- Ánh sáng ----------
@@ -247,14 +258,14 @@ const sun = new THREE.DirectionalLight(0xfff5e6, 1.5);
 sun.position.set(8, 18, 10);
 sun.target.position.set(8, 0, -4);
 sun.castShadow = true;
-sun.shadow.mapSize.set(2048, 2048);
-sun.shadow.camera.left = -28;
-sun.shadow.camera.right = 32;
-sun.shadow.camera.top = 20;
-sun.shadow.camera.bottom = -20;
-sun.shadow.camera.near = 1;
-sun.shadow.camera.far = 60;
-sun.shadow.bias = -0.0005;
+sun.shadow.mapSize.set(1024, 1024); // 1024 vừa sắc nét vừa tiết kiệm 75% VRAM so với 2048
+sun.shadow.camera.left = -22;
+sun.shadow.camera.right = 26;
+sun.shadow.camera.top = 16;
+sun.shadow.camera.bottom = -16;
+sun.shadow.camera.near = 2;
+sun.shadow.camera.far = 52;
+sun.shadow.bias = -0.0006;
 sun.shadow.normalBias = 0.02;
 scene.add(sun, sun.target);
 
@@ -325,7 +336,7 @@ let auroraFactor = 0.0;
 let wasAuroraActive = false;
 
 // ---------- Bầu trời sao (Starfield 360 độ) ----------
-const STAR_COUNT = 800;
+const STAR_COUNT = isMobile ? 380 : 650;
 const starGeo = new THREE.BufferGeometry();
 const starPos = new Float32Array(STAR_COUNT * 3);
 for (let i = 0; i < STAR_COUNT; i++) {
@@ -348,6 +359,7 @@ const starMat = new THREE.PointsMaterial({
 });
 const starfield = new THREE.Points(starGeo, starMat);
 starfield.frustumCulled = false;
+starfield.visible = false; // Mặc định ban ngày: ẩn hoàn toàn để không tốn draw-call
 scene.add(starfield);
 
 // ---------- Dải Cực Quang (Aurora Sky Dome) ----------
@@ -363,6 +375,7 @@ const auroraVertexShader = `
 `;
 
 const auroraFragmentShader = `
+  precision mediump float;
   uniform float uTime;
   uniform float uOpacity;
   varying vec3 vWorldPosition;
@@ -409,7 +422,7 @@ const auroraFragmentShader = `
   }
 `;
 
-const auroraGeo = new THREE.SphereGeometry(180, 64, 40, 0, Math.PI * 2, 0, Math.PI * 0.54);
+const auroraGeo = new THREE.SphereGeometry(160, 32, 20, 0, Math.PI * 2, 0, Math.PI * 0.54);
 const auroraMat = new THREE.ShaderMaterial({
   vertexShader: auroraVertexShader,
   fragmentShader: auroraFragmentShader,
@@ -425,6 +438,7 @@ const auroraMat = new THREE.ShaderMaterial({
 const auroraDome = new THREE.Mesh(auroraGeo, auroraMat);
 auroraDome.position.set(0, -12, 0);
 auroraDome.frustumCulled = false;
+auroraDome.visible = false; // Mặc định ban ngày: ẩn hoàn toàn
 scene.add(auroraDome);
 
 function toggleAurora() {
@@ -450,6 +464,18 @@ function updateWeather(dt, t) {
   // Lerp mượt mà (chuyển đổi từ từ trong ~2.5 giây)
   auroraFactor = THREE.MathUtils.lerp(auroraFactor, targetAurora, dt * 0.8);
 
+  const isVisible = auroraFactor > 0.002;
+  auroraDome.visible = isVisible;
+  starfield.visible = isVisible;
+
+  // Tối ưu CPU/GPU: nếu ban ngày ổn định, bỏ qua tính toán và cập nhật uniform
+  if (!isVisible && targetAurora === 0.0 && auroraFactor <= 0.002) {
+    if (ui.auroraLabel && ui.auroraLabel.textContent !== 'Tắt') {
+      ui.auroraLabel.textContent = 'Tắt';
+    }
+    return;
+  }
+
   // Chuyển màu nền & sương mù
   scene.background.lerpColors(COLOR_DAY_BG, COLOR_AURORA_BG, auroraFactor);
   scene.fog.color.lerpColors(COLOR_DAY_FOG, COLOR_AURORA_FOG, auroraFactor);
@@ -461,22 +487,24 @@ function updateWeather(dt, t) {
   sun.intensity = THREE.MathUtils.lerp(1.5, 0.95, auroraFactor);
 
   // Vòm cực quang & sao đi theo trục X của người chơi để bao quát 360 độ ở mọi camera
-  const centerX = player.root ? player.root.position.x + 10 : 0;
-  auroraDome.position.x = centerX;
-  starfield.position.x = centerX;
+  if (isVisible) {
+    const centerX = player.root ? player.root.position.x + 10 : 0;
+    auroraDome.position.x = centerX;
+    starfield.position.x = centerX;
 
-  auroraMat.uniforms.uTime.value = t;
-  auroraMat.uniforms.uOpacity.value = auroraFactor;
+    auroraMat.uniforms.uTime.value = t;
+    auroraMat.uniforms.uOpacity.value = auroraFactor;
 
-  // Sao lấp lánh nhẹ
-  starMat.opacity = auroraFactor * 0.85 * (0.8 + 0.2 * Math.sin(t * 2.8));
+    // Sao lấp lánh nhẹ
+    starMat.opacity = auroraFactor * 0.85 * (0.8 + 0.2 * Math.sin(t * 2.8));
+  }
 
   if (ui.auroraLabel) {
     ui.auroraLabel.textContent = (manualAuroraToggle || isAuroraNight) ? 'Bật' : 'Tắt';
   }
 }
 
-const SNOW_COUNT = 1200;
+const SNOW_COUNT = isMobile ? 500 : 750;
 const SNOW_BOUNDS = { minX: -30, maxX: 50, maxY: 22, minZ: -25, maxZ: 12 };
 const snowGeo = new THREE.BufferGeometry();
 const snowPos = new Float32Array(SNOW_COUNT * 3);
@@ -485,14 +513,14 @@ for (let i = 0; i < SNOW_COUNT; i++) {
   snowPos[i * 3] = rand(SNOW_BOUNDS.minX, SNOW_BOUNDS.maxX);
   snowPos[i * 3 + 1] = rand(0, SNOW_BOUNDS.maxY);
   snowPos[i * 3 + 2] = rand(SNOW_BOUNDS.minZ, SNOW_BOUNDS.maxZ);
-  snowData.push({ fall: rand(1.0, 2.6), phase: rand(0, Math.PI * 2), sway: rand(0.2, 0.6) });
+  snowData.push({ fall: rand(1.0, 2.6), sway: rand(0.2, 0.5) });
 }
 snowGeo.setAttribute('position', new THREE.BufferAttribute(snowPos, 3));
 const snow = new THREE.Points(
   snowGeo,
   new THREE.PointsMaterial({
     color: 0xffffff,
-    size: 0.2,
+    size: isMobile ? 0.25 : 0.2,
     map: makeSnowTexture(),
     transparent: true,
     depthWrite: false,
@@ -503,13 +531,13 @@ snow.frustumCulled = false;
 scene.add(snow);
 
 function updateSnow(dt, t, worldSpeed) {
-  const wind = 1.2 + worldSpeed * 0.12; // gió thổi về -X
+  const wind = (1.2 + worldSpeed * 0.12) * dt;
+  const sinWind = Math.sin(t * 1.3) * dt;
   for (let i = 0; i < SNOW_COUNT; i++) {
     const d = snowData[i];
     const ix = i * 3;
     snowPos[ix + 1] -= d.fall * dt;
-    snowPos[ix] -= (wind + Math.sin(t * 1.3 + d.phase) * d.sway) * dt;
-    snowPos[ix + 2] += Math.cos(t * 0.9 + d.phase) * 0.15 * dt;
+    snowPos[ix] -= wind + sinWind * d.sway;
     if (snowPos[ix + 1] < 0) {
       snowPos[ix + 1] = SNOW_BOUNDS.maxY;
       snowPos[ix] = rand(SNOW_BOUNDS.minX, SNOW_BOUNDS.maxX);
@@ -586,26 +614,26 @@ function makeCandyCaneTexture() {
 function buildDecorations() {
   // Gậy kẹo dọc đường chạy (phía trước)
   const caneMat = new THREE.MeshStandardMaterial({ map: makeCandyCaneTexture(), roughness: 0.4 });
-  const stickGeo = new THREE.CylinderGeometry(0.06, 0.06, 0.9, 10);
-  const hookGeo = new THREE.TorusGeometry(0.14, 0.06, 8, 16, Math.PI);
-  for (let x = CONFIG.worldMinX; x < CONFIG.worldMaxX; x += 7.5) {
+  const stickGeo = new THREE.CylinderGeometry(0.06, 0.06, 0.9, 8);
+  const hookGeo = new THREE.TorusGeometry(0.14, 0.06, 6, 12, Math.PI);
+  for (let x = CONFIG.worldMinX; x < CONFIG.worldMaxX; x += 11) {
     const cane = new THREE.Group();
     const stick = new THREE.Mesh(stickGeo, caneMat);
     stick.position.y = 0.45;
     const hook = new THREE.Mesh(hookGeo, caneMat);
     hook.position.set(0.14, 0.9, 0);
     cane.add(stick, hook);
-    cane.traverse((c) => c.isMesh && (c.castShadow = true));
+    // Tối ưu draw call: đạo cụ phụ ven đường không cast shadow
     cane.position.set(x, 0, 2.3);
-    cane.rotation.y = Math.PI; // móc quay về phía người chơi chạy tới
+    cane.rotation.y = Math.PI;
     scene.add(cane);
     scrollingProps.push({ obj: cane });
   }
 
-  // Ụ tuyết rải rác
+  // Ụ tuyết rải rác: 16 ụ nhẹ nhàng tự nhiên
   const moundMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1 });
-  const moundGeo = new THREE.SphereGeometry(1, 16, 10);
-  for (let i = 0; i < 34; i++) {
+  const moundGeo = new THREE.SphereGeometry(1, 10, 6);
+  for (let i = 0; i < 16; i++) {
     const m = new THREE.Mesh(moundGeo, moundMat);
     const s = rand(0.25, 0.9);
     m.scale.set(s * rand(1.2, 2), s * rand(0.25, 0.45), s);
@@ -724,6 +752,8 @@ function setupWorld(models) {
   player.root.add(player.body);
   player.root.position.set(CONFIG.playerX, 0, 0);
   scene.add(player.root);
+  // Lưu local bounding box một lần duy nhất để tối ưu va chạm không cần duyệt cây
+  player.localBox = new THREE.Box3().setFromObject(player.model);
 
   // ---------- Template chướng ngại vật ----------
   templates.treeSmall = normalizeAndCenterModel(models.tree.scene.clone(true), 1.8, 0);
@@ -731,33 +761,30 @@ function setupWorld(models) {
   templates.usagi = buildLyingUsagi(normalizeAndCenterModel(models.flying.scene, 1.4, Math.PI / 2));
 
   // ---------- Rừng thông nền (Bắc Âu) ----------
-  // Đưa ra xa hơn (z = -14 đến -34), làm mờ mềm mại và TẮT ĐỔ BÓNG hoàn toàn
-  // để người chơi tập trung tuyệt đối vào chướng ngại vật trên đường chạy
-  const count = 26;
+  // Tối ưu hóa cực lớn cho CPU/GPU (nhất là Mobile):
+  // Dùng 1 template cây nền dùng chung, chia sẻ chung vật liệu opaque, 0 đổ bóng, 0 depth-sorting
+  const bgTreeTemplate = templates.treeBig.clone(true);
+  bgTreeTemplate.traverse((c) => {
+    if (c.isMesh) {
+      c.castShadow = false;
+      c.receiveShadow = false;
+      c.material = c.material.clone();
+      c.material.roughness = 1.0;
+      if (c.material.color) {
+        c.material.color.lerp(new THREE.Color(0x8daec5), 0.35);
+      }
+    }
+  });
+
+  const count = isMobile ? 12 : 16;
   const span = CONFIG.worldMaxX - CONFIG.worldMinX;
   for (let i = 0; i < count; i++) {
-    const tree = templates.treeBig.clone(true);
-    const s = rand(1.1, 2.5);
+    const tree = bgTreeTemplate.clone(true);
+    const s = rand(1.1, 2.3);
     tree.scale.setScalar(s);
-    const z = rand(-34, -14);
+    const z = rand(-34, -15);
     tree.position.set(CONFIG.worldMinX + (i / count) * span + rand(-2, 2), 0, z);
     tree.rotation.y = rand(0, Math.PI * 2);
-
-    // Tắt đổ bóng cho TẤT CẢ cây nền & làm mờ nhẹ hòa vào sương mù
-    tree.traverse((c) => {
-      if (c.isMesh) {
-        c.castShadow = false;
-        c.receiveShadow = false;
-        c.material = c.material.clone();
-        c.material.transparent = true;
-        c.material.opacity = rand(0.55, 0.72);
-        c.material.roughness = 1.0;
-        if (c.material.color) {
-          c.material.color.lerp(new THREE.Color(0xb0c8dc), 0.3);
-        }
-      }
-    });
-
     scene.add(tree);
     scrollingProps.push({ obj: tree });
   }
@@ -784,6 +811,7 @@ function buildLyingUsagi(standing) {
   const size = new THREE.Box3().setFromObject(container).getSize(new THREE.Vector3());
   container.userData.size = size;
   container.userData.height = size.y;
+  container.userData.localBox = new THREE.Box3().setFromObject(container);
   return container;
 }
 
@@ -799,7 +827,7 @@ const OBSTACLE_TYPES = {
 
 function createObstacle(type) {
   const root = new THREE.Group();
-  const o = { type, root, mesh: null, wobble: null, baseY: 0, phase: rand(0, Math.PI * 2) };
+  const o = { type, root, mesh: null, wobble: null, baseY: 0, phase: rand(0, Math.PI * 2), localBox: null };
 
   if (type === 'usagi') {
     // Pivot ở giữa thân để xoay hỗn loạn tự nhiên
@@ -818,6 +846,7 @@ function createObstacle(type) {
     root.add(wobble);
     o.mesh = mesh;
     o.wobble = wobble;
+    o.localBox = templates.usagi.userData.localBox;
     // Bay nằm: thấp (phải nhảy) hoặc ngang đầu (phải cúi)
     o.baseY = Math.random() < 0.5 ? 0.95 : 0.15;
   } else {
@@ -825,6 +854,7 @@ function createObstacle(type) {
     mesh.rotation.y = rand(0, Math.PI * 2);
     root.add(mesh);
     o.mesh = mesh;
+    o.localBox = templates[OBSTACLE_TYPES[type].template].userData.localBox;
   }
 
   root.position.set(CONFIG.spawnX, o.baseY, 0);
@@ -874,13 +904,16 @@ const upperBox = new THREE.Box3();
 const USAGI_SHRINK = new THREE.Vector3(CONFIG.hitboxShrink, -0.1, CONFIG.hitboxShrink);
 
 function checkCollision(o) {
+  // Tối ưu hóa cực hạn: dùng precomputed localBox nhân ma trận, không duyệt cây con
+  obsBox.copy(o.localBox).applyMatrix4(o.root.matrixWorld);
+
   if (o.type === 'usagi') {
     // Usagi nằm khá mỏng theo trục Y -> chỉ thu nhỏ ít theo chiều dọc
-    obsBox.setFromObject(o.mesh).expandByVector(USAGI_SHRINK);
+    obsBox.expandByVector(USAGI_SHRINK);
     return !obsBox.isEmpty() && playerBox.intersectsBox(obsBox);
   }
 
-  obsBox.setFromObject(o.mesh).expandByScalar(CONFIG.hitboxShrink);
+  obsBox.expandByScalar(CONFIG.hitboxShrink);
   if (obsBox.isEmpty()) return false;
 
   // Cây thông hình nón: chia hitbox thành phần thân dưới (rộng) + ngọn (hẹp)
@@ -1035,7 +1068,7 @@ function updateGame(dt, t) {
 
   // ---------- Va chạm ----------
   player.root.updateMatrixWorld(true);
-  playerBox.setFromObject(player.model).expandByScalar(CONFIG.hitboxShrink);
+  playerBox.copy(player.localBox).applyMatrix4(player.body.matrixWorld).expandByScalar(CONFIG.hitboxShrink);
   for (const o of obstacles) {
     if (Math.abs(o.root.position.x - CONFIG.playerX) > 4) continue; // lọc nhanh
     o.root.updateMatrixWorld(true);
@@ -1266,7 +1299,7 @@ function handleResize() {
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
   renderer.setSize(w, h);
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setPixelRatio(maxDPR);
 }
 window.addEventListener('resize', handleResize);
 window.addEventListener('orientationchange', () => {
