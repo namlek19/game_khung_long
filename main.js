@@ -170,6 +170,15 @@ class SoundManager {
     });
     this.tone({ type: 'sawtooth', from: 165, to: 55, start: notes.length * 0.13, duration: 0.6, volume: 0.18 });
   }
+
+  playAuroraSound() {
+    // Hợp âm arpeggio lung linh huyền ảo: C5, E5, G5, B5, E6 ngân nhẹ
+    const notes = [523.25, 659.25, 783.99, 987.77, 1318.51];
+    notes.forEach((freq, i) => {
+      this.tone({ type: 'sine', from: freq, start: i * 0.11, duration: 1.1, volume: 0.16, attack: 0.02 });
+      this.tone({ type: 'triangle', from: freq * 2, start: i * 0.11 + 0.03, duration: 0.55, volume: 0.06, attack: 0.01 });
+    });
+  }
 }
 
 // =====================================================================
@@ -191,6 +200,8 @@ const ui = {
   btnRestart: $('btn-restart'),
   btnCamera: $('btn-camera'),
   cameraLabel: $('camera-label'),
+  btnAurora: $('btn-aurora'),
+  auroraLabel: $('aurora-label'),
   btnHelp: $('btn-help'),
   helpPanel: $('help-panel'),
   btnSound: $('btn-sound'),
@@ -228,7 +239,8 @@ renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 ui.app.prepend(renderer.domElement);
 
 // ---------- Ánh sáng ----------
-scene.add(new THREE.AmbientLight(0xffffff, 0.7));
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
+scene.add(ambientLight);
 
 const sun = new THREE.DirectionalLight(0xfff5e6, 1.5);
 sun.position.set(8, 18, 10);
@@ -292,6 +304,174 @@ function makeSnowTexture() {
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
   return tex;
+}
+
+// =====================================================================
+//  THỜI TIẾT: ĐÊM CỰC QUANG (AURORA BOREALIS)
+// =====================================================================
+const COLOR_DAY_BG = new THREE.Color(0xdbe9f4);
+const COLOR_AURORA_BG = new THREE.Color(0x090d26);
+const COLOR_DAY_FOG = new THREE.Color(0xdbe9f4);
+const COLOR_AURORA_FOG = new THREE.Color(0x090d26);
+const COLOR_DAY_AMB = new THREE.Color(0xffffff);
+const COLOR_AURORA_AMB = new THREE.Color(0x6a7fd4);
+const COLOR_DAY_SUN = new THREE.Color(0xfff5e6);
+const COLOR_AURORA_SUN = new THREE.Color(0x72f5ff);
+
+let manualAuroraToggle = false;
+let auroraFactor = 0.0;
+let wasAuroraActive = false;
+
+// ---------- Bầu trời sao (Starfield 360 độ) ----------
+const STAR_COUNT = 800;
+const starGeo = new THREE.BufferGeometry();
+const starPos = new Float32Array(STAR_COUNT * 3);
+for (let i = 0; i < STAR_COUNT; i++) {
+  const theta = rand(0, Math.PI * 2);
+  const r = rand(95, 138);
+  starPos[i * 3] = Math.cos(theta) * r;
+  starPos[i * 3 + 1] = rand(9, 85);
+  starPos[i * 3 + 2] = Math.sin(theta) * r;
+}
+starGeo.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
+const starMat = new THREE.PointsMaterial({
+  color: 0xffffff,
+  size: 1.1,
+  map: makeSnowTexture(),
+  transparent: true,
+  opacity: 0,
+  depthWrite: false,
+  blending: THREE.AdditiveBlending,
+  sizeAttenuation: true,
+});
+const starfield = new THREE.Points(starGeo, starMat);
+starfield.frustumCulled = false;
+scene.add(starfield);
+
+// ---------- Dải Cực Quang (Aurora Sky Dome) ----------
+const auroraVertexShader = `
+  varying vec3 vWorldPosition;
+  varying vec2 vUv;
+  void main() {
+    vUv = uv;
+    vec4 worldPos = modelMatrix * vec4(position, 1.0);
+    vWorldPosition = worldPos.xyz;
+    gl_Position = projectionMatrix * viewMatrix * worldPos;
+  }
+`;
+
+const auroraFragmentShader = `
+  uniform float uTime;
+  uniform float uOpacity;
+  varying vec3 vWorldPosition;
+  varying vec2 vUv;
+
+  void main() {
+    if (uOpacity <= 0.001) {
+      discard;
+    }
+    // Góc phương vị 360 độ quanh tâm vòm trời
+    float angle = atan(vWorldPosition.z, vWorldPosition.x);
+    // Độ cao trên bầu trời
+    float h = clamp(vWorldPosition.y / 75.0, 0.0, 1.0);
+
+    // Nhiều tầng sóng sin tạo dải lượn uốn khúc mềm mại
+    float wave1 = sin(angle * 3.5 + uTime * 0.45) * 0.5 + 0.5;
+    float wave2 = sin(angle * 7.5 - uTime * 0.75 + h * 3.2) * 0.25;
+    float wave3 = sin(angle * 13.0 + uTime * 1.1) * 0.12;
+    float ribbon = wave1 + wave2 + wave3;
+
+    // Các dải sáng sọc dọc (vertical ray curtains)
+    float rays = sin(angle * 32.0 + sin(h * 8.5 + uTime * 0.35) * 2.8) * 0.5 + 0.5;
+    rays = pow(rays, 2.2);
+
+    // Mặt nạ độ cao: mờ dần ở chân trời (tránh đè lên đồi núi) và mờ ở đỉnh đầu
+    float heightMask = smoothstep(0.04, 0.22, h) * smoothstep(0.88, 0.38, h);
+
+    // Cường độ dải cực quang
+    float intensity = smoothstep(0.35, 0.85, ribbon) * (0.55 + 0.45 * rays) * heightMask;
+
+    // Lớp cực quang thứ hai tạo chiều sâu không gian
+    float ribbon2 = sin(angle * 5.0 - uTime * 0.35 + h * 2.0) * 0.5 + 0.5;
+    float intensity2 = smoothstep(0.48, 0.88, ribbon2) * heightMask * 0.45;
+    intensity = max(intensity, intensity2);
+
+    // 3 tông màu rực rỡ đặc trưng
+    vec3 colPink = vec3(1.0, 0.50, 0.87);    // #ff80df Hồng phấn chân trời
+    vec3 colCyan = vec3(0.0, 1.0, 0.80);    // #00ffcc Xanh ngọc cực quang
+    vec3 colViolet = vec3(0.72, 0.30, 1.0); // #b84dff Tím hồng đỉnh trời
+
+    vec3 col = mix(colPink, colCyan, smoothstep(0.12, 0.42, h));
+    col = mix(col, colViolet, smoothstep(0.42, 0.78, h));
+
+    gl_FragColor = vec4(col * (intensity * 2.3), intensity * uOpacity);
+  }
+`;
+
+const auroraGeo = new THREE.SphereGeometry(140, 64, 32, 0, Math.PI * 2, 0, Math.PI * 0.48);
+const auroraMat = new THREE.ShaderMaterial({
+  vertexShader: auroraVertexShader,
+  fragmentShader: auroraFragmentShader,
+  uniforms: {
+    uTime: { value: 0 },
+    uOpacity: { value: 0 },
+  },
+  side: THREE.BackSide,
+  transparent: true,
+  depthWrite: false,
+  blending: THREE.AdditiveBlending,
+});
+const auroraDome = new THREE.Mesh(auroraGeo, auroraMat);
+auroraDome.frustumCulled = false;
+scene.add(auroraDome);
+
+function toggleAurora() {
+  sound.init();
+  manualAuroraToggle = !manualAuroraToggle;
+  return manualAuroraToggle;
+}
+
+function updateWeather(dt, t) {
+  // Logic chu kỳ kích hoạt theo điểm số:
+  // Kích hoạt khi >= 500 điểm, kéo dài 300 điểm (500->800, 1500->1800,...)
+  const isAuroraNight = score >= 500 && ((score - 500) % 1000 < 300);
+  const targetAurora = manualAuroraToggle || isAuroraNight ? 1.0 : 0.0;
+
+  // Âm thanh huyền ảo khi bắt đầu vào Đêm Cực quang
+  if (targetAurora === 1.0 && !wasAuroraActive) {
+    wasAuroraActive = true;
+    sound.playAuroraSound();
+  } else if (targetAurora === 0.0 && wasAuroraActive) {
+    wasAuroraActive = false;
+  }
+
+  // Lerp mượt mà (chuyển đổi từ từ trong ~2.5 giây)
+  auroraFactor = THREE.MathUtils.lerp(auroraFactor, targetAurora, dt * 0.8);
+
+  // Chuyển màu nền & sương mù
+  scene.background.lerpColors(COLOR_DAY_BG, COLOR_AURORA_BG, auroraFactor);
+  scene.fog.color.lerpColors(COLOR_DAY_FOG, COLOR_AURORA_FOG, auroraFactor);
+  scene.fog.density = THREE.MathUtils.lerp(0.018, 0.007, auroraFactor);
+
+  // Chuyển màu ánh sáng
+  ambientLight.color.lerpColors(COLOR_DAY_AMB, COLOR_AURORA_AMB, auroraFactor);
+  sun.color.lerpColors(COLOR_DAY_SUN, COLOR_AURORA_SUN, auroraFactor);
+  sun.intensity = THREE.MathUtils.lerp(1.5, 0.95, auroraFactor);
+
+  // Vòm cực quang & sao đi theo trục X của người chơi để bao quát 360 độ ở mọi camera
+  const centerX = player.root ? player.root.position.x + 10 : 0;
+  auroraDome.position.x = centerX;
+  starfield.position.x = centerX;
+
+  auroraMat.uniforms.uTime.value = t;
+  auroraMat.uniforms.uOpacity.value = auroraFactor;
+
+  // Sao lấp lánh nhẹ
+  starMat.opacity = auroraFactor * 0.85 * (0.8 + 0.2 * Math.sin(t * 2.8));
+
+  if (ui.auroraLabel) {
+    ui.auroraLabel.textContent = (manualAuroraToggle || isAuroraNight) ? 'Bật' : 'Tắt';
+  }
 }
 
 const SNOW_COUNT = 1200;
@@ -549,16 +729,33 @@ function setupWorld(models) {
   templates.usagi = buildLyingUsagi(normalizeAndCenterModel(models.flying.scene, 1.4, Math.PI / 2));
 
   // ---------- Rừng thông nền (Bắc Âu) ----------
-  const count = 22;
+  // Đưa ra xa hơn (z = -14 đến -34), làm mờ mềm mại và TẮT ĐỔ BÓNG hoàn toàn
+  // để người chơi tập trung tuyệt đối vào chướng ngại vật trên đường chạy
+  const count = 26;
   const span = CONFIG.worldMaxX - CONFIG.worldMinX;
   for (let i = 0; i < count; i++) {
     const tree = templates.treeBig.clone(true);
-    const s = rand(1.0, 2.2);
+    const s = rand(1.1, 2.5);
     tree.scale.setScalar(s);
-    const z = rand(-15, -4);
+    const z = rand(-34, -14);
     tree.position.set(CONFIG.worldMinX + (i / count) * span + rand(-2, 2), 0, z);
     tree.rotation.y = rand(0, Math.PI * 2);
-    if (z < -9) tree.traverse((c) => c.isMesh && (c.castShadow = false)); // tiết kiệm hiệu năng
+
+    // Tắt đổ bóng cho TẤT CẢ cây nền & làm mờ nhẹ hòa vào sương mù
+    tree.traverse((c) => {
+      if (c.isMesh) {
+        c.castShadow = false;
+        c.receiveShadow = false;
+        c.material = c.material.clone();
+        c.material.transparent = true;
+        c.material.opacity = rand(0.55, 0.72);
+        c.material.roughness = 1.0;
+        if (c.material.color) {
+          c.material.color.lerp(new THREE.Color(0xb0c8dc), 0.3);
+        }
+      }
+    });
+
     scene.add(tree);
     scrollingProps.push({ obj: tree });
   }
@@ -725,6 +922,7 @@ function resetGame() {
   while (obstacles.length) removeObstacle(0);
   score = 0;
   lastMilestone = 0;
+  wasAuroraActive = false;
   gameSpeed = CONFIG.startSpeed;
   distanceSinceSpawn = 0;
   spawnGap = 14;
@@ -946,6 +1144,7 @@ function animate() {
 
   const worldSpeed = state === 'playing' ? gameSpeed : 0;
   if (player.model) updatePlayerAnimation(dt, elapsed);
+  updateWeather(dt, elapsed);
   updateScrollingProps(dt, worldSpeed);
   updateSnow(dt, elapsed, worldSpeed);
   updatePuffs(dt);
@@ -965,6 +1164,7 @@ window.addEventListener('keydown', (e) => {
 
   if (e.code === 'KeyC' && !e.repeat) return cycleCamera();
   if (e.code === 'KeyM' && !e.repeat) return toggleSound();
+  if (e.code === 'KeyP' && !e.repeat) return toggleAurora();
 
   if (JUMP_KEYS.includes(e.code)) {
     if (state === 'ready' && !e.repeat) return startGame();
@@ -1050,6 +1250,7 @@ document.querySelectorAll('button').forEach((b) => {
 ui.btnStart.addEventListener('click', () => state === 'ready' && startGame());
 ui.btnRestart.addEventListener('click', () => state === 'over' && startGame());
 ui.btnCamera.addEventListener('click', cycleCamera);
+ui.btnAurora.addEventListener('click', toggleAurora);
 ui.btnSound.addEventListener('click', toggleSound);
 ui.btnHelp.addEventListener('click', () => ui.helpPanel.classList.toggle('hidden'));
 
